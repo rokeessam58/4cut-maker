@@ -64,6 +64,10 @@
   .bar { display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--card); border-radius:12px; padding:10px 14px; margin-bottom:12px; }
   .bar .who { font-size:19px; font-weight:700; }
   .bar button { padding:8px 12px; font-size:14px; }
+  .prog { height:12px; margin-top:12px; border-radius:6px; background:#3a3a42; overflow:hidden; }
+  .prog > div { height:100%; width:0; border-radius:6px; background:var(--pink); transition:width .35s ease; }
+  .prog.busy > div { background-image:repeating-linear-gradient(45deg, rgba(255,255,255,.25) 0 10px, transparent 10px 20px); background-size:28px 28px; animation:stripe .8s linear infinite; }
+  @keyframes stripe { to { background-position:28px 0; } }
   #status { min-height:22px; margin-top:10px; font-size:15px; }
   .ok { color:#6fdc8c; } .err { color:#ff7b7b; }
 </style>
@@ -107,11 +111,13 @@
       <button id="btnSave">기기에 저장</button>
       <button id="btnUpload" class="primary">선생님께 제출</button>
     </div>
+    <div id="prog" class="prog" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><div id="progFill"></div></div>
     <div id="status"></div>
   </section>
 </div>
 <input id="file" type="file" accept="image/*" hidden>
 <script src="config.js"></script>
+<script src="decor.js"></script>
 <script>
 const W = 891, H = 1260;
 const EVENT_DATE = '2026.10.22. 서울랜드 현장체험학습';
@@ -144,50 +150,40 @@ function clampOffset(i) {
   st.ox = Math.min(mx, Math.max(-mx, st.ox)); st.oy = Math.min(my, Math.max(-my, st.oy));
 }
 
-// ---- 분홍색 손그림 낙서 ----
-function sparkle(cx, cy, r) {          // 네 갈래 반짝이
-  const k = r*0.22;
-  ctx.beginPath(); ctx.moveTo(cx, cy-r);
-  ctx.quadraticCurveTo(cx+k, cy-k, cx+r, cy); ctx.quadraticCurveTo(cx+k, cy+k, cx, cy+r);
-  ctx.quadraticCurveTo(cx-k, cy+k, cx-r, cy); ctx.quadraticCurveTo(cx-k, cy-k, cx, cy-r);
-  ctx.closePath(); ctx.stroke();
-}
-function plus(cx, cy, r) {
-  ctx.beginPath(); ctx.moveTo(cx-r, cy); ctx.lineTo(cx+r, cy); ctx.moveTo(cx, cy-r); ctx.lineTo(cx, cy+r); ctx.stroke();
-}
-function asterisk(cx, cy, r) {
-  ctx.beginPath();
-  for (let a = 0; a < 3; a++) { const t = a*Math.PI/3 + 0.3; ctx.moveTo(cx - Math.cos(t)*r, cy - Math.sin(t)*r); ctx.lineTo(cx + Math.cos(t)*r, cy + Math.sin(t)*r); }
-  ctx.stroke();
-}
-function spiral(cx, cy, R, turns = 2.5) {
-  const end = turns*2*Math.PI; ctx.beginPath();
-  for (let t = 0; t <= end; t += 0.15) { const r = R*t/end; ctx.lineTo(cx + Math.cos(t)*r, cy + Math.sin(t)*r); }
-  ctx.stroke();
-}
-function squiggle(x, y, w, amp, n) {   // 지그재그 선
-  ctx.beginPath(); ctx.moveTo(x, y);
-  for (let i = 1; i <= n; i++) ctx.lineTo(x + w*i/n, y + (i % 2 ? -amp : amp));
-  ctx.stroke();
-}
-function smiley(cx, cy, r) {
-  ctx.beginPath(); ctx.arc(cx, cy, r, 0.2, Math.PI*2 - 0.1); ctx.stroke();
-  ctx.beginPath(); ctx.arc(cx - r*0.35, cy - r*0.2, 1.5, 0, 7); ctx.arc(cx + r*0.35, cy - r*0.2, 1.5, 0, 7); ctx.stroke();
-  ctx.beginPath(); ctx.arc(cx, cy + r*0.05, r*0.5, 0.25, Math.PI - 0.25); ctx.stroke();
+// ---- 장식: sketch.svg(스프라이트 시트)에서 요소별로 잘라 배치 ----
+const sheet = new Image();
+sheet.onload = () => { if (!mainEl.hidden) draw(); };
+sheet.src = window.DECOR_SHEET;
+// 시트(930x912 기준) 안의 각 요소 영역 [x, y, w, h]
+const SPR = {
+  squiggle: [0, 35, 130, 105],  curl:    [20, 220, 142, 172], rays:   [350, 82, 208, 208],
+  star:     [838, 0, 60, 60],   swirl:   [730, 125, 200, 250], bar:    [290, 462, 308, 52],
+  sparkleL: [0, 720, 142, 192], sparkleS:[105, 628, 95, 110],  smiley: [333, 660, 247, 232],
+  stars3:   [726, 644, 204, 254],
+};
+// 중심 (cx, cy), 너비 w 기준으로 그림. h를 주면 비율을 무시하고 그 높이로 맞춤
+function spr(name, cx, cy, w, h) {
+  const [sx, sy, sw, sh] = SPR[name], k = 2;              // 시트는 2배 해상도
+  const dh = h || w * sh / sw;
+  ctx.drawImage(sheet, sx*k, sy*k, sw*k, sh*k, cx - w/2, cy - dh/2, w, dh);
 }
 function drawDecor() {
-  ctx.save(); ctx.strokeStyle = '#ff4d94'; ctx.lineWidth = 4.5; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  // 위쪽
-  sparkle(42, 78, 22); sparkle(92, 52, 9);
-  plus(866, 40, 11); spiral(846, 96, 24); asterisk(830, 195, 14);
-  // 오른쪽 가운데
-  squiggle(700, 311, 100, 7, 8);
-  // 왼쪽
-  sparkle(40, 650, 17); sparkle(92, 630, 10); sparkle(20, 705, 9);
-  // 아래쪽
-  spiral(36, 1098, 15, 2); asterisk(76, 1124, 12);
-  smiley(805, 1118, 26);
-  ctx.restore();
+  if (!sheet.complete || !sheet.naturalWidth) return;
+  // 위쪽: 왼쪽 반짝이 2개 / 오른쪽 위 방사선, 소용돌이, 별
+  spr('sparkleL', 42, 90, 72); spr('sparkleS', 100, 44, 44);
+  spr('swirl', 838, 92, 104); spr('star', 840, 180, 46);
+  // 점프샷 칸 오른쪽 위 모서리: 강조 표시(선분 4개)
+  spr('rays', 844, 312, 88);
+  // 왼쪽: 별 3개
+  spr('stars3', 46, 616, 92);
+  // 아래쪽: 왼쪽 아래 곱슬선과 별, 오른쪽 아래 웃는 얼굴
+  spr('curl', 40, 1096, 64); spr('star', 102, 1134, 36);
+  spr('smiley', 812, 1106, 112);
+  // 하단 문구 중 "서울랜드 현장체험학습" 부분의 가운데 아래에 밑줄
+  ctx.font = `700 46px 'NexonMaplestory', sans-serif`;
+  const at = EVENT_DATE.indexOf('서울랜드');
+  const full = ctx.measureText(EVENT_DATE).width, pre = ctx.measureText(EVENT_DATE.slice(0, at)).width, part = ctx.measureText(EVENT_DATE.slice(at)).width;
+  spr('bar', W/2 - full/2 + pre + part/2, 1214, 400, 22);
 }
 function text(t, x, y, size, stroke = 6, weight = 700) {
   ctx.font = `${weight} ${size}px 'NexonMaplestory', sans-serif`;
@@ -198,8 +194,6 @@ function text(t, x, y, size, stroke = 6, weight = 700) {
 
 function draw() {
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
-  ctx.strokeStyle = '#ff4d94'; ctx.lineWidth = 5; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(265, 1215); ctx.lineTo(626, 1212); ctx.stroke();
 
   SLOTS.forEach((s, i) => {
     const st = state[i];
@@ -228,7 +222,7 @@ function draw() {
   // 모둠원 이름: 맨 위 여백(0~TOP) 한 줄, 길면 글자 크기를 줄여 맞춤
   const names = $('names').value.trim();
   if ($('namesOn').checked && names) {
-    const maxW = W - 120;
+    const maxW = W - 2*130;               // 좌우 130px씩 비움 (왼쪽 반짝이는 x≈121, 오른쪽 소용돌이는 x≈788부터 시작)
     let size = 30;
     ctx.font = `300 ${size}px 'NexonMaplestory', sans-serif`;
     const w = ctx.measureText(names).width;
@@ -334,6 +328,11 @@ $('btnClear').onclick = () => { if (sel >= 0) { state[sel] = { img:null, zoom:1,
 // ---- 저장 / 제출 ----
 const statusEl = $('status');
 function setStatus(msg, cls) { statusEl.textContent = msg; statusEl.className = cls || ''; }
+const progEl = $('prog'), progFill = $('progFill');
+function setProg(p, busy = false) {         // p: 0~1, null이면 숨김, busy면 현재 파일 전송 중 줄무늬 애니메이션
+  progEl.hidden = p == null; progEl.classList.toggle('busy', busy);
+  if (p != null) { progFill.style.width = Math.round(p * 100) + '%'; progEl.setAttribute('aria-valuenow', Math.round(p * 100)); }
+}
 const stamp = () => { const d = new Date(), p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; };
 const safe = (s) => s.replace(/[\\/:*?"<>|\s]/g, '');
 const baseName = () => `${info.grade}학년${info.cls}반_${safe(info.leader)}_${stamp()}`;
@@ -372,10 +371,14 @@ $('btnUpload').onclick = async (ev) => {
   const url = window.APPS_SCRIPT_URL;
   if (!url || url.includes('여기에')) { setStatus('아직 업로드 주소가 설정되지 않았어요. (config.js)', 'err'); return; }
   if (!warnIfEmpty()) return;
-  const btn = ev.currentTarget; btn.disabled = true; setStatus('제출 중... 잠시만 기다려 주세요.');
+  const btn = ev.currentTarget; btn.disabled = true; setStatus('제출 중... 잠시만 기다려 주세요.'); setProg(0);
   try {
     const name = baseName();
-    const post = async (filename, dataUrl, subfolder, mime) => {
+    const photos = state.map((st, i) => ({ st, i })).filter(o => o.st.img);
+    const total = photos.length + 1;       // 완성본 1장 + 개별 사진
+    // step번째 파일 한 개를 보낸다. (XHR 업로드 진행 이벤트는 CORS 사전요청을 일으켜 Apps Script에서 막히므로 fetch 사용)
+    const post = async (step, label, filename, dataUrl, subfolder, mime) => {
+      setStatus(`제출 중... ${label}`); setProg(step / total, true);
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // 프리플라이트 방지
@@ -383,26 +386,26 @@ $('btnUpload').onclick = async (ev) => {
       });
       const j = await res.json();
       if (!j.ok) throw new Error(j.error || '서버 오류');
+      setProg((step + 1) / total);
     };
     // 1) 완성된 한 장
-    await post('완성_' + name + '.jpg', render('image/jpeg', 0.92));
+    await post(0, '완성된 사진', '완성_' + name + '.jpg', render('image/jpeg', 0.92));
     // 2) 올린 개별 사진 → 개별사진/<제출명>/ 폴더 (10MB 이하는 원본 그대로, 초과는 긴 변 2000px로 줄여서)
-    const photos = state.map((st, i) => ({ st, i })).filter(o => o.st.img);
     for (let n = 0; n < photos.length; n++) {
-      setStatus(`제출 중... 개별 사진 ${n + 1}/${photos.length}`);
+      const label = `개별 사진 ${n + 1}/${photos.length}`;
       const { st, i } = photos[n];
       const base = `${i + 1}_${safe(SLOTS[i].name)}`, sub = `개별사진/${name}`;
       if (st.file && st.file.size <= ORIGINAL_MAX) {
         const ext = (st.file.name.match(/\.[A-Za-z0-9]{1,5}$/) || ['.jpg'])[0].toLowerCase();
-        await post(base + ext, await readDataUrl(st.file), sub, st.file.type || 'image/jpeg');
+        await post(n + 1, label, base + ext, await readDataUrl(st.file), sub, st.file.type || 'image/jpeg');
       } else {
-        await post(base + '.jpg', shrink(st.img), sub, 'image/jpeg');
+        await post(n + 1, label, base + '.jpg', shrink(st.img), sub, 'image/jpeg');
       }
     }
     setStatus('✅ 제출 완료! 선생님 드라이브에 저장되었어요.', 'ok');
   } catch (e) {
     setStatus('제출 실패: ' + e.message + ' — "기기에 저장" 후 직접 전달해 주세요.', 'err');
-  } finally { btn.disabled = false; }
+  } finally { btn.disabled = false; progEl.classList.remove('busy'); }
 };
 
 if (document.fonts) Promise.all([
