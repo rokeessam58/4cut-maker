@@ -402,18 +402,24 @@ function shrink(img, max = 2000) {
   return c.toDataURL('image/jpeg', 0.9);
 }
 
-$('btnUpload').onclick = async (ev) => {
+const SENDING = '제출 중(1~2분 소요)';
+$('btnUpload').onclick = async () => {
   const url = window.APPS_SCRIPT_URL;
   if (!url || url.includes('여기에')) { setStatus('아직 업로드 주소가 설정되지 않았어요. (config.js)', 'err'); return; }
   if (!(await warnIfEmpty())) return;
-  const btn = $('btnUpload'); btn.disabled = true; setStatus('제출 중... 잠시만 기다려 주세요.'); setProg(0);
+  const btn = $('btnUpload'); btn.disabled = true; setStatus(`${SENDING}... 잠시만 기다려 주세요.`); setProg(0, true);
+  let timer;
   try {
     const name = baseName();
     const photos = state.map((st, i) => ({ st, i })).filter(o => o.st.img);
-    const total = photos.length + 1;       // 완성본 1장 + 개별 사진
-    // step번째 파일 한 개를 보낸다. (XHR 업로드 진행 이벤트는 CORS 사전요청을 일으켜 Apps Script에서 막히므로 fetch 사용)
-    const post = async (step, label, filename, dataUrl, subfolder, mime) => {
-      setStatus(`제출 중... ${label}`); setProg(step / total, true);
+    const total = photos.length + 1;       // 업로드할 파일 수: 완성본 1장 + 개별 사진 n장
+    // 로딩 바: 시작 1초 뒤 1/(2·total) → 파일(완성본·개별 사진) 하나 끝날 때마다 1/total씩 → 마지막 파일이 끝나면 남은 만큼 채워 100%
+    let kicked = false, filesDone = 0;
+    const fill = () => setProg(Math.min(1, ((kicked ? 0.5 : 0) + filesDone) / total), true);
+    timer = setTimeout(() => { kicked = true; fill(); }, 1000);
+    // 파일 한 개를 보낸다. (XHR 업로드 진행 이벤트는 CORS 사전요청을 일으켜 Apps Script에서 막히므로 fetch 사용)
+    const post = async (label, filename, dataUrl, subfolder, mime) => {
+      setStatus(`${SENDING}... ${label}`);
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },   // 프리플라이트 방지
@@ -421,10 +427,10 @@ $('btnUpload').onclick = async (ev) => {
       });
       const j = await res.json();
       if (!j.ok) throw new Error(j.error || '서버 오류');
-      setProg((step + 1) / total);
     };
     // 1) 완성된 한 장
-    await post(0, '완성된 사진', '완성_' + name + '.jpg', render('image/jpeg', 0.92));
+    await post('완성된 사진', '완성_' + name + '.jpg', render('image/jpeg', 0.92));
+    filesDone++; fill();
     // 2) 올린 개별 사진 → 개별사진/<제출명>/ 폴더 (10MB 이하는 원본 그대로, 초과는 긴 변 2000px로 줄여서)
     for (let n = 0; n < photos.length; n++) {
       const label = `개별 사진 ${n + 1}/${photos.length}`;
@@ -432,15 +438,19 @@ $('btnUpload').onclick = async (ev) => {
       const base = `${i + 1}_${safe(SLOTS[i].name)}`, sub = `개별사진/${name}`;
       if (st.file && st.file.size <= ORIGINAL_MAX) {
         const ext = (st.file.name.match(/\.[A-Za-z0-9]{1,5}$/) || ['.jpg'])[0].toLowerCase();
-        await post(n + 1, label, base + ext, await readDataUrl(st.file), sub, st.file.type || 'image/jpeg');
+        await post(label, base + ext, await readDataUrl(st.file), sub, st.file.type || 'image/jpeg');
       } else {
-        await post(n + 1, label, base + '.jpg', shrink(st.img), sub, 'image/jpeg');
+        await post(label, base + '.jpg', shrink(st.img), sub, 'image/jpeg');
       }
+      filesDone++; fill();
     }
+    clearTimeout(timer);
+    setProg(1);                                         // 100%를 채우고
+    await new Promise(r => setTimeout(r, 500));         // 0.5초 뒤에 완료 문구
     setStatus('✅ 제출 완료! 선생님 드라이브에 저장되었어요.', 'ok');
   } catch (e) {
     setStatus('제출 실패: ' + e.message + ' — "기기에 저장" 후 직접 전달해 주세요.', 'err');
-  } finally { btn.disabled = false; progEl.classList.remove('busy'); }
+  } finally { clearTimeout(timer); btn.disabled = false; progEl.classList.remove('busy'); }
 };
 
 if (document.fonts) Promise.all([
