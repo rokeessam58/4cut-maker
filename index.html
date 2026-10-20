@@ -406,7 +406,7 @@ $('btnUpload').onclick = async (ev) => {
   const url = window.APPS_SCRIPT_URL;
   if (!url || url.includes('여기에')) { setStatus('아직 업로드 주소가 설정되지 않았어요. (config.js)', 'err'); return; }
   if (!(await warnIfEmpty())) return;
-  const btn = ev.currentTarget; btn.disabled = true; setStatus('제출 중... 잠시만 기다려 주세요.'); setProg(0);
+  const btn = $('btnUpload'); btn.disabled = true; setStatus('제출 중... 잠시만 기다려 주세요.'); setProg(0);
   try {
     const name = baseName();
     const photos = state.map((st, i) => ({ st, i })).filter(o => o.st.img);
