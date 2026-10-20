@@ -54,7 +54,7 @@
   .switch input:checked + .track::after { transform:translateX(20px); }
   .switch input:focus-visible + .track { outline:2px solid #fff; outline-offset:2px; }
   .two { display:flex; gap:10px; } .two > div { flex:1; }
-  canvas { width:100%; height:auto; display:block; border-radius:8px; touch-action:pan-y; background:#000; }
+  canvas { width:100%; height:auto; display:block; border-radius:8px; background:#000; -webkit-touch-callout:none; user-select:none; -webkit-user-select:none; }
   .hint { color:var(--muted); font-size:14px; margin:8px 0; }
   .panel { background:var(--card); border-radius:12px; padding:12px; margin:12px 0; }
   .panel b { color:var(--pink); }
@@ -101,7 +101,7 @@
       <input id="names" type="text" maxlength="40" placeholder="예: 김하나, 이둘, 박셋, 최넷" hidden>
     </div>
     <canvas id="cv" width="891" height="1260"></canvas>
-    <p class="hint">칸을 터치해서 사진을 고르세요. 선택한 칸은 손가락으로 끌어 위치를 맞출 수 있어요.</p>
+    <p class="hint">칸을 터치해서 사진을 고르세요. 선택한 칸은 손가락으로 끌어 위치를 맞출 수 있어요. (선택한 칸 밖을 밀면 화면이 스크롤돼요)</p>
 
     <div class="panel" id="panel" hidden>
       <div><b id="selName"></b> 칸</div>
@@ -308,7 +308,7 @@ cv.addEventListener('pointerdown', (e) => {
   if (i < 0) { select(-1); return; }
   if (i === sel && state[i].img) {
     drag = { x:p.x, y:p.y, ox:state[i].ox, oy:state[i].oy };
-    cv.setPointerCapture(e.pointerId); cv.style.touchAction = 'none';
+    cv.setPointerCapture(e.pointerId);
   } else {
     select(i);
     if (!state[i].img) fileInput.click();
@@ -320,7 +320,13 @@ cv.addEventListener('pointermove', (e) => {
   st.ox = drag.ox + (p.x - drag.x); st.oy = drag.oy + (p.y - drag.y);
   clampOffset(sel); draw();
 });
-const endDrag = () => { drag = null; cv.style.touchAction = 'pan-y'; };
+const endDrag = () => { drag = null; };
+// 선택된(사진이 있는) 칸 안에서 시작한 터치만 화면 스크롤을 막고 사진 이동에 쓴다. 그 밖은 평소처럼 스크롤된다.
+cv.addEventListener('touchstart', (e) => {
+  if (sel < 0 || !state[sel].img || e.touches.length !== 1) return;
+  const t = e.touches[0], r = cv.getBoundingClientRect();
+  if (hit({ x:(t.clientX - r.left)*W/r.width, y:(t.clientY - r.top)*H/r.height }) === sel) e.preventDefault();
+}, { passive:false });
 cv.addEventListener('pointerup', endDrag); cv.addEventListener('pointercancel', endDrag);
 
 fileInput.addEventListener('change', () => {
